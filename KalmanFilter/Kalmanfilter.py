@@ -57,7 +57,7 @@ def change_ts(filter,timestep):
     return out
 
 
-def predict_BB(img,model,filter,counter):
+def predict_BB(img,model,filter,counter,det_dect):
 
     detections =model(img).xywh[0]
 
@@ -71,8 +71,12 @@ def predict_BB(img,model,filter,counter):
         filter.predict()
         manual = change_ts(filter,1/3)
         filter_output_pred=filter.x[:4]
-        plot_one_box(yolobbox2bbox(*filter_output_pred),img,color=(0,0,255),line_thickness=1)
-        plot_one_box(yolobbox2bbox(*manual[:4]),img,color=(255,255,255),line_thickness=1)
+
+        det_dect[counter+10]=yolobbox2bbox(*manual[:4])
+        
+        if counter>10:
+            plot_one_box(det_dect[counter],img,color=(0,0,255),line_thickness=1)
+
 
         filter.update(xyxy)
 
@@ -153,6 +157,7 @@ model.conf=0.8
 vid = cv2.VideoCapture("videos/falta.mp4")
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter("videos/output_falta" +'.mp4', fourcc, vid.get(cv2.CAP_PROP_FPS), (848,480))
+det_dect={}
 counter=0
 while(True):
 
@@ -161,12 +166,12 @@ while(True):
     if not ret:
         break
 
-    predict_BB(frame,model ,f,counter)
+    predict_BB(frame,model ,f,counter,det_dect)
 
 
   
     cv2.imshow('frame', frame)
-    save_img(f"output/{counter}.png",frame)
+    save_img(f"output2/{counter}.png",frame)
     out.write(frame)
     counter+=1
 
@@ -176,7 +181,3 @@ while(True):
 out.release()
 vid.release()
 cv2.destroyAllWindows()
-
-
-
-

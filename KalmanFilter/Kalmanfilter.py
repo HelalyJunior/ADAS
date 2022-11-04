@@ -44,6 +44,50 @@ def get_bounding_box_area(det):
 def load_model():
     return torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
 
+#FPS=30 , 0.6 -> 20 Frame
+def change_ts(filter,timestep):
+    F = np.array([          [1.,0.,0.,0.,timestep,0.],
+                            [0,1.,0.,0.,0,timestep],
+                            [0,0,1.,0.,0.,0. ],
+                            [0,0,0,1.,0.,0. ],
+                            [0,0,0,0,1,0   ],
+                            [0,0,0,0,0,1.  ]
+                            ])
+    out = np.dot(F,filter.x)
+    return out
+
+
+def predict_BB(img,model,filter,counter):
+
+    detections =model(img).xywh[0]
+
+    for det in detections:
+
+        *xyxy, conf, cls = det
+
+        for i,tensor_array in enumerate(xyxy):
+            xyxy[i] = tensor_array.cpu().detach().numpy()
+
+        filter.predict()
+        manual = change_ts(filter,1/3)
+        filter_output_pred=filter.x[:4]
+        plot_one_box(yolobbox2bbox(*filter_output_pred),img,color=(0,0,255),line_thickness=1)
+        plot_one_box(yolobbox2bbox(*manual[:4]),img,color=(255,255,255),line_thickness=1)
+
+        filter.update(xyxy)
+
+        xyxy=yolobbox2bbox(*xyxy)
+        plot_one_box(xyxy,img,color=(255,0,0),line_thickness=1)
+
+
+        ## DOT PRODUCT F.x and F.f ---> F is falta
+        ## change delta t in F.fm,.'p[0p[pp]]
+
+
+
+    
+    
+
 def kalmanInit():
     danny_filta= KalmanFilter (dim_x=6, dim_z=4)
 # dim_x = 6 ? x,y,w,h,vx,vy ?
@@ -58,8 +102,11 @@ def kalmanInit():
     ,[4]])   
     #state transtion matrix :  what intialization?
 
-    danny_filta.F = np.array([[1.,0.,0.,0.,1,0.],
-                            [0,1.,0.,0.,0,1],
+
+    # dt = 1/FPS
+    # dt = rate of input measurments
+    danny_filta.F = np.array([[1.,0.,0.,0.,1/30,0.],
+                            [0,1.,0.,0.,0,1/30],
                             [0,0,1.,0.,0.,0. ],
                             [0,0,0,1.,0.,0. ],
                             [0,0,0,0,1,0   ],
@@ -98,54 +145,14 @@ def kalmanInit():
 
 
 
-def predict_BB(img,model,filter,counter):
-    detections =model(img).xywh[0]
-    for det in detections:
-        
-        *xyxy, conf, cls = det
-        if counter%10 ==0:
-            # for i,tensor_array in enumerate(xyxy):
-            #     xyxy[i] = tensor_array.cpu().detach().numpy()
-            filter.predict()
-            filter.update(xyxy)
-            filter_output_pred=filter.x[:4]
-            plot_one_box(yolobbox2bbox(*filter_output_pred),img,label='helaly_Estimate',color=(255,0,255),line_thickness=1)
-        else:
-            manual=change_ts(filter)
-            plot_one_box(yolobbox2bbox(*(manual[:4])),img,label='manual',color=(255,255,255),line_thickness=1)
-
-        xyxy=yolobbox2bbox(*xyxy)
-        plot_one_box(xyxy,img,color=(255,0,0),line_thickness=1)
-
-
-        ## DOT PRODUCT F.x and F.f ---> F is falta
-        ## change delta t in F.fm,.'p[0p[pp]]
-
-
-def change_ts(filter):
-    F = np.array([          [1.,0.,0.,0.,0.6,0.],
-                            [0,1.,0.,0.,0,0.6],
-                            [0,0,1.,0.,0.,0. ],
-                            [0,0,0,1.,0.,0. ],
-                            [0,0,0,0,1,0   ],
-                            [0,0,0,0,0,1.  ]
-                            ])
-    out = np.dot(F,filter.x)
-    return out
-    
-    
-
-
 
 f=kalmanInit()
 model =load_model()
-model.classes=0 #people
-model.conf = 0.8
-
-vid = cv2.VideoCapture("videoOpcio5.mp4")
+model.classes=0 #people=0 #car=2
+model.conf=0.8
+vid = cv2.VideoCapture("videos/falta.mp4")
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter("output_falta_h" +'.mp4', fourcc, vid.get(cv2.CAP_PROP_FPS), (848,480))
-print(vid.get(cv2.CAP_PROP_FPS))
+out = cv2.VideoWriter("videos/output_falta" +'.mp4', fourcc, vid.get(cv2.CAP_PROP_FPS), (848,480))
 counter=0
 while(True):
 
@@ -155,13 +162,13 @@ while(True):
         break
 
     predict_BB(frame,model ,f,counter)
-    counter+=1
 
 
   
     cv2.imshow('frame', frame)
+    save_img(f"output/{counter}.png",frame)
     out.write(frame)
-
+    counter+=1
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break

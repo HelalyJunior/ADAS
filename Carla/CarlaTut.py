@@ -16,6 +16,7 @@ camera_path = "D:/Handsa/carla/camera_images"
 import matplotlib.pyplot as plt
 # import YOLOV7
 import keyboard
+import os
 
 
 
@@ -184,12 +185,21 @@ def call_back_camera_yolo(model, img, label):
     cv2.imshow('img',detect_img)
     _ = cv2.waitKey(1)
 
-def call_back_camera(img):
+def call_back_camera(img,out_img, save):
     init_shape = (img.height, img.width, 4)
     image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
+    out_img = image
+    
 
-    cv2.imshow('img',image)
-    _ = cv2.waitKey(1)
+    
+    if save:
+        path = os.path.join('output', f'{img.frame}.png' )
+        # img.save_to_disk(path)
+        print(path)
+        cv2.imwrite(path, image)
+    
+
+
         
 
 # getting images from camera sensor saved on disk
@@ -564,9 +574,11 @@ def scenario_angle():
         
 
         print("**************************************************************************"+"\n")
-        if (distance <=5) and (angle <=20):
+        if (distance <=10) and (angle <=20):
             # vehicle1.stop_vehicle()
             print("Stopping ego vehicle")
+
+            break
         if keyboard.is_pressed('b'):
             vehicle1.destroy()
             cv2.destroyAllWindows()
@@ -575,10 +587,38 @@ def scenario_angle():
         else:
             continue
 
+def scenario_kalman():
+    client , world = init_client_world(2000)
+    bps, spawn_pts = get_bps_spawn_pts(world)
+    vehicle = spawn_vehicle(bps, spawn_pts, world)
+
+    
+
+    camera_bps = bps.find("sensor.camera.rgb")
+    camera_trans = carla.Transform(carla.Location(x = 10, y = 0, z= 10), carla.Rotation(pitch = -10.0))
+    camera = world.spawn_actor(camera_bps, camera_trans, attach_to= vehicle)
+    out_img = np.zeros((1280,720))
+    camera.listen(lambda img : call_back_camera(img,out_img,  True))
+
+    
+
+    vehicle.set_autopilot(True)
+    spectator = world.get_spectator()
+    transform = carla.Transform(vehicle.get_transform().transform(carla.Location(x=-8, z=2.5)), vehicle.get_transform().rotation)
+    spectator.set_transform(transform)
+    while True:
+        if keyboard.is_pressed == 'b':
+            camera.stop()
+            break
+            
+        else: 
+            continue
+    cv2.destroyAllWindows()
 
 
 
-scenario_angle()
+
+scenario_kalman()
 
 
 

@@ -64,7 +64,7 @@ def get_bps_spawn_pts(world):
 #********************************************************************Vehicle Functions for control and spawning*********************************************************
 def spawn_vehicle(blue_prints, spawn_pts, world):
     vehicle_bp = blue_prints.find("vehicle.audi.tt")
-    vehicle = world.try_spawn_actor(vehicle_bp, random.choice(spawn_pts))
+    vehicle = world.spawn_actor(vehicle_bp, random.choice(spawn_pts))
     return vehicle
 
 
@@ -72,9 +72,9 @@ def spawn_vehicle(blue_prints, spawn_pts, world):
 
 
 
-def spawn_vehicle_follow(blue_prints, vehicle, world):
+def spawn_vehicle_follow(blue_prints, waypoint,vehicle, world):
      
-     return world.try_spawn_actor(blue_prints.find("vehicle.audi.tt"), transform =vehicle.get_transform().transform(carla.Location(x=5, y= 0, z= 0)) )
+     return world.spawn_actor(blue_prints.find("vehicle.audi.tt"), transform =carla.Transform(waypoint.transform.location + carla.Location(x = 30, z=2.5), vehicle.get_transform().rotation ))
 
 
 
@@ -127,14 +127,14 @@ def automatic_control(vehicle):
 
 def enable_auto_pilot(client, port, vehicles_list, world):
     
-    tm = client.get_trafficmanager()
+    tm = client.get_trafficmanager(port)
     tm_port = tm.get_port()
     # setting autopilot for vehciles in vehicles_list
     for v in vehicles_list:
         v.set_autopilot(True, tm_port)
-        # tm.ignore_vehicles_percentage(v, 100)
+        tm.ignore_vehicles_percentage(v, 100)
         tm.keep_right_rule_percentage(v, 100)
-        tm.ignore_lights_percentage(v,100)
+        # tm.ignore_lights_percentage(v,100)
         
         
         
@@ -142,17 +142,17 @@ def enable_auto_pilot(client, port, vehicles_list, world):
     # here is how it is done
     
     # Set the simulation to sync mode
-#     init_settings = world.get_settings()
-#     settings = world.get_settings()
-#     settings.synchronous_mode = True
+    init_settings = world.get_settings()
+    settings = world.get_settings()
+    settings.synchronous_mode = True
     
     # After that, set the TM to sync mode
-#     tm.set_synchronous_mode(True)
+    tm.set_synchronous_mode(True)
 
 
     # Tick the world in the same client
-#     world.apply_settings(init_settings)
-#     world.tick()
+    world.apply_settings(init_settings)
+    world.tick()
 
 
 
@@ -438,8 +438,12 @@ def scenario_distance_gps():
 
     #spawning ego vehicle
     vehicle1 = spawn_vehicle(bps, spawn_pts, world)
-    vehicle2 = spawn_vehicle(bps, spawn_pts, world)
+    map = world.get_map()
+    waypoint = map.get_waypoint(vehicle1.get_location(), project_to_road = True)
+    waypoint = waypoint.next(5)[0]
+    vehicle2 = spawn_vehicle_follow(bps, waypoint,vehicle1, world)
     
+    vehicle1.set_autopilot(True)
 
     # spawning gps sensors to our two vehicles
     gps_vehicle1 = spawn_gps(bps, vehicle1, world)
@@ -460,7 +464,7 @@ def scenario_distance_gps():
     print("\n")
     
     # enable auto-pilot for our vehicles
-    enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1, vehicle2])
+    # enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1, vehicle2])
 
 
    
@@ -470,10 +474,6 @@ def scenario_distance_gps():
         spectator = world.get_spectator()
         transform = carla.Transform(vehicle1.get_transform().transform(carla.Location(x=-8, z=2.5)), vehicle1.get_transform().rotation)
         spectator.set_transform(transform)
-
-        print("\n")
-        print(vehicle1.get_transform().location)
-        print("\n")
 
 
         #FUNCTION FOR PRINTING DISTANCE BETWEEN TWO LOCATIONS
@@ -511,14 +511,20 @@ def scenario_distance_gps():
         print('the error in gps measurment is: {:.2f} \n'.format(calc_err(distance_loc,dist_gps )))
         print("**************************************************************************"+"\n")
 
+        if angle_gps <= 20 and dist_gps <=15:
+            stop_vehicle(vehicle1)
+            print("Entered Danger Zone.\nStopping ego vehicle.")
+            
 
         if keyboard.is_pressed('b'):
             gps_vehicle1.stop()
             gps_vehicle2.stop()
+            gps_vehicle1.destroy()
+            gps_vehicle2.destroy()
             vehicle1.destroy()
             vehicle2.destroy()
             cv2.destroyAllWindows()
-            break
+            
         else:
             continue
 
@@ -616,9 +622,32 @@ def scenario_kalman():
     cv2.destroyAllWindows()
 
 
+def spawn_two_op_vehicles():
+    client,world = init_client_world(2000)
+
+    bps, spawn_pts = get_bps_spawn_pts(world)
+
+    vehicle1 = spawn_vehicle(bps, spawn_pts, world)
+    map = world.get_map()
+    waypoint = map.get_waypoint(vehicle1.get_location(), project_to_road = True)
+    waypoint = waypoint.next(5)[0]
+    vehicle2 = spawn_vehicle_follow(bps, waypoint,vehicle1, world)
+
+    # enable_auto_pilot(client, 5000, [vehicle1, vehicle2], world)
+    spectator = world.get_spectator()
+    spectator_trans = carla.Transform(vehicle1.get_transform().transform(carla.Location(x=-8, z= 2.5)), vehicle1.get_transform().rotation)
+    spectator.set_transform(spectator_trans)
+    while True:
+
+        
+
+        if keyboard.is_pressed('b'):
+            vehicle1.destroy()
+            vehicle2.destroy()
+            break
 
 
-scenario_kalman()
+scenario_distance_gps()
 
 
 

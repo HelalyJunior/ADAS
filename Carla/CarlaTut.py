@@ -2,10 +2,7 @@
 # coding: utf-8
 
 # In[1]:
-
-
-
-
+import keyboard
 import carla
 import math
 import random
@@ -13,10 +10,10 @@ import cv2
 import numpy as np
 import glob # for getting images from camera
 camera_path = "D:/Handsa/carla/camera_images"
-import matplotlib.pyplot as plt
-# import YOLOV7
-import keyboard
 import os
+import sys
+sys.path.insert(1, '../')
+import DetectionModel_TrafficLights.Traffic_lights as Traffic_lights
 
 
 
@@ -82,6 +79,8 @@ def spawn_vehicle_follow(blue_prints, waypoint,vehicle, world):
 
 def stop_vehicle(vehicle):
 
+    vehicle.set_autopilot(False,5000)
+    print("STOPPING ! ")
     ctrl = vehicle.get_control()
     ctrl.brake = 1.0
     ctrl.throttle = 0.0
@@ -134,25 +133,26 @@ def enable_auto_pilot(client, port, vehicles_list, world):
         v.set_autopilot(True, tm_port)
         tm.ignore_vehicles_percentage(v, 100)
         tm.keep_right_rule_percentage(v, 100)
-        # tm.ignore_lights_percentage(v,100)
+        tm.ignore_lights_percentage(v,100)
+        tm.ignore_signs_percentage(v,100)
+        tm.ignore_walkers_percentage(v,100)
+        tm.auto_lane_change(v,False)
         
         
         
     # traffic manager should be run in sync mode with server
     # here is how it is done
     
-    # Set the simulation to sync mode
-    init_settings = world.get_settings()
+    # # Set the simulation to sync mode
     settings = world.get_settings()
     settings.synchronous_mode = True
     
-    # After that, set the TM to sync mode
+    # # After that, set the TM to sync mode
     tm.set_synchronous_mode(True)
 
 
-    # Tick the world in the same client
-    world.apply_settings(init_settings)
-    world.tick()
+    # # Tick the world in the same client
+    world.apply_settings(settings)
 
 
 
@@ -179,11 +179,7 @@ def call_back_camera_yolo(model, img, label):
     init_shape = (img.height, img.width, 4)
     image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
 
-    detect_img, label[0] = YOLOV7.detect(model, image,img.frame, True)
-
-
-    cv2.imshow('img',detect_img)
-    _ = cv2.waitKey(1)
+    label[1], label[0] = Traffic_lights.detect(model, image,img.frame, True)
 
 def call_back_camera(img,out_img, save):
     init_shape = (img.height, img.width, 4)
@@ -401,26 +397,32 @@ def scenario_traffic_light():
     
     # spawning camera
     camera = spawn_camera(bps, vehicle1, world,camera_path)
-    label = [False]
-    model = YOLOV7.load_model()
+    label = [False,np.zeros((500,500))]
+    model = Traffic_lights.load_model()
 
     camera.listen(lambda img : call_back_camera_yolo(model, img, label))
 
     # enable auto-pilot for our vehicle
     enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1] )
 
-
+    counter=0
     while True:
+        world.tick()
         # setting spectator to point to the ego vehicle
-
+        cv2.imshow('img',label[1])
+        # Traffic_lights.save_img(f'../Lanes_Test/{counter}.png',label[1])
+        _ = cv2.waitKey(1)
         spectator = world.get_spectator()
         transform = carla.Transform(vehicle1.get_transform().transform(carla.Location(x=-8, z=2.5)), vehicle1.get_transform().rotation)
         spectator.set_transform(transform)
+        counter+=1
 
         if (label[0]):
             stop_vehicle(vehicle1)
         else:
-            vehicle1.set_autopilot(True)
+            vehicle1.set_autopilot(True,5000)
+            # enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1] )
+
 
 
         if keyboard.is_pressed('b'):
@@ -647,7 +649,7 @@ def spawn_two_op_vehicles():
             break
 
 
-scenario_distance_gps()
+scenario_traffic_light()
 
 
 

@@ -2,7 +2,10 @@
 # coding: utf-8
 
 # In[1]:
-import keyboard
+
+
+
+
 import carla
 import math
 import random
@@ -10,11 +13,12 @@ import cv2
 import numpy as np
 import glob # for getting images from camera
 camera_path = "D:/Handsa/carla/camera_images"
+import matplotlib.pyplot as plt
+# import YOLOV7
+import keyboard
 import os
-import sys
-sys.path.insert(1, '../')
-import DetectionModel_TrafficLights.Traffic_lights as Traffic_lights
-
+import Phase1
+from Phase1 import calc_off_dist, sliding_window, detect_edges, PerspectiveTransform, warpPerspective, debug_mode
 
 
 # # function setpath fe el traffic manager btkhaly el vehicle tfollow certain locations t3addy 3leha
@@ -33,6 +37,18 @@ def init_client_world(port):
     
     return client, world
 
+# Sync world with client
+def sync_world(world):
+    settings = world.get_settings()
+    settings.synchronous_mode = True 
+    settings.fixed_delta_seconds = 0.05
+    world.apply_settings(settings)
+
+# Desync world before stopping client
+def desync_world(world):
+    settings = world.get_settings()
+    settings.synchronous_mode = False 
+    world.apply_settings(settings)
 #***********************************************************************************************************************************************************************
 
 
@@ -79,8 +95,6 @@ def spawn_vehicle_follow(blue_prints, waypoint,vehicle, world):
 
 def stop_vehicle(vehicle):
 
-    vehicle.set_autopilot(False,5000)
-    print("STOPPING ! ")
     ctrl = vehicle.get_control()
     ctrl.brake = 1.0
     ctrl.throttle = 0.0
@@ -131,28 +145,27 @@ def enable_auto_pilot(client, port, vehicles_list, world):
     # setting autopilot for vehciles in vehicles_list
     for v in vehicles_list:
         v.set_autopilot(True, tm_port)
-        tm.ignore_vehicles_percentage(v, 100)
+        # tm.ignore_vehicles_percentage(v, 100)
         tm.keep_right_rule_percentage(v, 100)
         tm.ignore_lights_percentage(v,100)
-        tm.ignore_signs_percentage(v,100)
-        tm.ignore_walkers_percentage(v,100)
-        tm.auto_lane_change(v,False)
         
         
         
     # traffic manager should be run in sync mode with server
     # here is how it is done
     
-    # # Set the simulation to sync mode
-    settings = world.get_settings()
-    settings.synchronous_mode = True
+    # Set the simulation to sync mode
+    # init_settings = world.get_settings()
+    # settings = world.get_settings()
+    # settings.synchronous_mode = True
     
-    # # After that, set the TM to sync mode
+    # After that, set the TM to sync mode
     tm.set_synchronous_mode(True)
 
 
-    # # Tick the world in the same client
-    world.apply_settings(settings)
+    # Tick the world in the same client
+    # world.apply_settings(init_settings)
+    # world.tick()
 
 
 
@@ -179,22 +192,39 @@ def call_back_camera_yolo(model, img, label):
     init_shape = (img.height, img.width, 4)
     image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
 
-    label[1], label[0] = Traffic_lights.detect(model, image,img.frame, True)
+    detect_img, label[0] = YOLOV7.detect(model, image,img.frame, True)
+
+
+    cv2.imshow('img',detect_img)
+    _ = cv2.waitKey(1)
 
 def call_back_camera(img,out_img, save):
     init_shape = (img.height, img.width, 4)
     image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
-    out_img = image
     
-
+    
+    
     
     if save:
         path = os.path.join('output', f'{img.frame}.png' )
         # img.save_to_disk(path)
         print(path)
-        cv2.imwrite(path, image)
+        cv2.imwrite(path, out_img)
     
+def call_back_camera_lane(img,out_img,src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list,out, save):
 
+    init_shape = (img.height, img.width, 4)
+    image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
+    
+    out_img,old_list[0], old_list[1] = lane_detection_output(image, src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list[0],old_list[1],size = (800, 600), debug = 0)
+    # print(f"right poly old after call back is: {old_list[0]}\n")
+    out.write(out_img)
+    
+    if save:
+        path = os.path.join('output', f'{img.frame}.png' )
+        # img.save_to_disk(path)
+        print(path)
+        cv2.imwrite(path, out_img)
 
         
 
@@ -397,32 +427,26 @@ def scenario_traffic_light():
     
     # spawning camera
     camera = spawn_camera(bps, vehicle1, world,camera_path)
-    label = [False,np.zeros((500,500))]
-    model = Traffic_lights.load_model()
+    label = [False]
+    model = YOLOV7.load_model()
 
     camera.listen(lambda img : call_back_camera_yolo(model, img, label))
 
     # enable auto-pilot for our vehicle
     enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1] )
 
-    counter=0
+
     while True:
-        world.tick()
         # setting spectator to point to the ego vehicle
-        cv2.imshow('img',label[1])
-        # Traffic_lights.save_img(f'../Lanes_Test/{counter}.png',label[1])
-        _ = cv2.waitKey(1)
+
         spectator = world.get_spectator()
         transform = carla.Transform(vehicle1.get_transform().transform(carla.Location(x=-8, z=2.5)), vehicle1.get_transform().rotation)
         spectator.set_transform(transform)
-        counter+=1
 
         if (label[0]):
             stop_vehicle(vehicle1)
         else:
-            vehicle1.set_autopilot(True,5000)
-            # enable_auto_pilot(client = client, world = world, port = 5000, vehicles_list = [vehicle1] )
-
+            vehicle1.set_autopilot(True)
 
 
         if keyboard.is_pressed('b'):
@@ -635,7 +659,7 @@ def spawn_two_op_vehicles():
     waypoint = waypoint.next(5)[0]
     vehicle2 = spawn_vehicle_follow(bps, waypoint,vehicle1, world)
 
-    # enable_auto_pilot(client, 5000, [vehicle1, vehicle2], world)
+    enable_auto_pilot(client, 5000, [vehicle1], world)
     spectator = world.get_spectator()
     spectator_trans = carla.Transform(vehicle1.get_transform().transform(carla.Location(x=-8, z= 2.5)), vehicle1.get_transform().rotation)
     spectator.set_transform(spectator_trans)
@@ -648,8 +672,162 @@ def spawn_two_op_vehicles():
             vehicle2.destroy()
             break
 
+def lane_detection_output(image, src_pts, dst_pts,s_thresh, l_thresh,shadow_thresh,right_poly_old,left_poly_old, size,  debug = 0):
 
-scenario_traffic_light()
+    output_name = ''
+    debug_resize = 3
+    ny_pipeline = 3
+    if debug == 1:
+        pipeline = []
+        output_name += '_debug'
+        size_debug = ((size[0] // debug_resize) * 2 , (size[1] // debug_resize) * ny_pipeline)
+    
+
+    # if right_poly_old is None or left_poly_old is None:
+    #     print("ana dkhlt")
+    #     right_poly_old = np.zeros((size[1] , 2) , np.int32)
+    #     left_poly_old =  np.zeros((size[1] , 2) , np.int32)
+
+    
+
+    frame = image
+    
+        
+    (combined_binary,l,s) = detect_edges(frame , s_thresh , l_thresh,shadow_thresh)
+#         kernel_op = np.asarray([[0 , 1, 0],
+#                                [0, 1 , 0],
+#                                [0 , 1, 0]] , np.uint8)
+    kernel_co = np.ones((3,3) , np.uint8)
+#         combined_binary = cv2.morphologyEx(combined_binary, cv2.MORPH_OPEN ,kernel_op)
+    combined_binary = cv2.dilate(combined_binary,kernel_co)
+    M,Minv = PerspectiveTransform(src_pts, dst_pts)
+    dst = warpPerspective(combined_binary ,M , size)
+    dst_equalized = cv2.equalizeHist(dst)     
+#         dst_colored = perspective_warp(frame ,src=input_points , dst=p2)
+    dst_colored = warpPerspective(frame ,M , size)
+    # print(f"right poly old before call back is: {right_poly_old}\n")
+    out_img,right_poly_new,left_poly ,left_fit , right_fit,ploty= sliding_window(dst , dst_colored, (30 , 40),right_poly_old,left_poly_old,80)
+    right_poly_old = right_fit
+    left_poly_old = left_fit
+    
+    left = np.array([np.transpose(np.vstack([left_fit, ploty]))])
+    right = np.array([np.flipud(np.transpose(np.vstack([right_fit, ploty])))])
+    points = np.hstack((left, right))
+    
+    
+    
+    cv2.fillPoly(out_img,np.int_(points),color= (255,0,0))
+    
+    re_bird = warpPerspective(out_img , Minv , size) 
+    
+    
+    #printing the off-centre distance on video frame
+    # dst_off = calc_off_dist(M,frame ,right_poly_new[200], left_poly[200])
+    # re_bird = cv2.putText(img=re_bird, text='The car is '+str(dst_off)+' off centre' , org=(0,150), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=1, color=(255, 255, 255),thickness=3)
+    re_bird = cv2.putText(img=re_bird, text='The car is off centre' , org=(0,150), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=1, color=(255, 255, 255),thickness=3)
+    image = np.zeros_like(re_bird)
+    cv2.addWeighted(frame, 0.5, re_bird, 0.5,0, image)
+    
+    if debug == 1:
+        pipeline.append(l)
+        pipeline.append(s)
+        pipeline.append(combined_binary)
+        pipeline.append(dst)
+        pipeline.append(dst_equalized)
+        pipeline.append(image)
+        image = debug_mode(pipeline , debug_resize)
+        pipeline.clear()
+        
+        
+    return image, right_poly_old, left_poly_old
+            
+       
+def scenario_lane_detection():
+
+
+    client, world = init_client_world(2000)
+    size = (800, 600)
+    sync_world(world)
+
+    bps, spawn_pts = get_bps_spawn_pts(world)
+    
+    vehicle = spawn_vehicle(bps,spawn_pts, world)
+    enable_auto_pilot(client, 5000, [vehicle], world)
+
+    camera = spawn_camera(bps, vehicle, world, camera_path)
+    camera_img = np.zeros((size[0], size[1], 3))
+    # configuring parameters for lane detection algorrithm:
+    # points for prespective transform
+    # input_top_left = [550,468]
+    # input_top_right = [742,468]
+    # input_bottom_right = [1280,720]
+    # input_bottom_left = [128,720]
+    input_top_left = [320,350]
+    input_top_right = [460,350]
+    input_bottom_right = [750,600]
+    input_bottom_left = [60,600]
+
+    s_thresh = (75, 255)
+    l_thresh = (140 , 255)
+    shad_thresh = (150,100)
+
+    src_pts = np.float32([input_bottom_left,input_top_left,input_top_right,input_bottom_right])
+    dst_pts = np.float32([[0,size[1]],[0,0],[size[0],0],[size[0],size[1]]])
+    
+    right_poly_old, left_poly_old = np.zeros((600,1), np.int32), np.zeros((600,1), np.int32)
+    old_list = [right_poly_old, left_poly_old]
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_path = './videos/lane_demo.mp4'
+    out = cv2.VideoWriter(video_path, fourcc, 25.0, (800,600))
+
+    
+    camera.listen(lambda img : call_back_camera_lane(img, camera_img, src_pts, dst_pts,s_thresh, l_thresh, shad_thresh,old_list,out,save = True) )
+
+    
+    
+    
+
+   
+
+    
+    while(True):
+
+        world.tick()
+        spectator = world.get_spectator()
+        spectator_transform = carla.Transform(vehicle.get_transform().transform(carla.Location(x=-8, z= 2.5)), vehicle.get_transform().rotation)
+        spectator.set_transform(spectator_transform)
+
+        
+        
+        # cv2.imshow("Lane Detection: ", camera_img)
+
+        # if cv2.waitKey(1) & 0xFF == ord('b'):
+        #     break
+        try:
+
+            if keyboard.is_pressed('b'):
+                camera.stop()
+                camera.destroy()
+                vehicle.destroy()
+                desync_world(world)
+                break
+                
+        except:
+            continue
+    out.release()
+            
+        
+
+def extract_color_trial():
+    img = cv2.imread("/home/amr/GradProj/output/22051.png")
+    out_img = Phase1.extract_white(img)
+    cv2.imshow("img", out_img)
+    if cv2.waitKey(0) & 0xFF == ord("q"):
+        cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    scenario_lane_detection()
 
 
 

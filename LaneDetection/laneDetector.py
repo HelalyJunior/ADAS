@@ -73,7 +73,6 @@ def concat_frames(frames):
 
     return t
 
-# H
 def get_right(image):
     cropped_img=np.zeros_like(image)
     cropped_img[:,image.shape[1]//2:image.shape[1]] = image[:,image.shape[1]//2:image.shape[1]]
@@ -150,11 +149,11 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(out_path + "output" +'.mp4', fourcc, 25, (800,600))
 
 # FRAME COUNTER
-counter = 668
+counter = 300
 
-start = 668
+start = 300
 while counter<1622:
-  img = cv2.imread(f"/home/helaly/Desktop/GP/ADAS/ADAS/Lanes_Test/{counter}.png")
+  img = cv2.imread(f"/home/helaly/Deskzop/GP/ADAS/ADAS/Lanes_Test/{counter}.png")
   if counter<start:
     counter+=1
     continue

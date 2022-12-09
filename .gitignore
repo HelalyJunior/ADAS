@@ -4,4 +4,8 @@ KalmanFilter/videos/
 KalmanFilter/yolov5s.pt
 Carla/yolov5s.pt
 /Lanes_Test
+<<<<<<< HEAD
 LaneDetection/lane_detection_presentation/
+=======
+Carla/__pycache__
+>>>>>>> 475a46a699a9f7ec2df8378ad565418c4ed17060

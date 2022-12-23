@@ -1,0 +1,3 @@
+2022-12-16T18:55:49.665040+0200 INFO Start reading image and preprocessing
+2022-12-16T18:55:49.688479+0200 INFO Image load complete, cost time: 0.02300s
+2022-12-16T18:56:05.885849+0200 INFO Single imgae inference cost time: 0.02149s

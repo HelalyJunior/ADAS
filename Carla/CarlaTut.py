@@ -200,31 +200,32 @@ def call_back_camera_yolo(model, img, label):
 
 def call_back_camera(img,out_img, save):
     init_shape = (img.height, img.width, 4)
-    image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
+    out_img[0] = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
     
     
     
     
     if save:
-        path = os.path.join('output', f'{img.frame}.png' )
+        # path = os.path.join('output', f'{img.frame}.png' )
+        path = '/home/amr/GradProj/output/'+f'{img.frame}.png'
         # img.save_to_disk(path)
         print(path)
-        cv2.imwrite(path, out_img)
+        cv2.imwrite(path, out_img[0])
     
-def call_back_camera_lane(img,out_img,src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list,out, save):
+def call_back_camera_lane(img,out_img,src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list,out_src, out_detect, save):
 
     init_shape = (img.height, img.width, 4)
     image = np.array(img.raw_data).reshape(init_shape)[:,:,:3]
-    
-    out_img,old_list[0], old_list[1] = lane_detection_output(image, src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list[0],old_list[1],size = (800, 600), debug = 0)
+    out_src.write(image)
+    out_img[0],old_list[0], old_list[1] = lane_detection_output(image, src_pts, dst_pts, s_thresh, l_thresh, shad_thresh,old_list[0],old_list[1],size = (800, 600), debug = 0)
     # print(f"right poly old after call back is: {old_list[0]}\n")
-    out.write(out_img)
+    out_detect.write(out_img[0])
     
     if save:
-        path = os.path.join('output', f'{img.frame}.png' )
+        path = '/home/amr/GradProj/output/'+ f'{img.frame}.png'
         # img.save_to_disk(path)
-        print(path)
-        cv2.imwrite(path, out_img)
+        
+        cv2.imwrite(path, image)
 
         
 
@@ -255,26 +256,37 @@ def store_coord(coord1,gps_coord):
     coord1[0] = gps_coord.longitude
 
 
-def spawn_gps(blue_print, vehicle, world):
+def spawn_gps(blue_print, vehicle, world, offset=1):
     gps_bp = blue_print.find('sensor.other.gnss')
-    gps_init_trans = carla.Transform(carla.Location(x= 1, z=2.5))
+    gps_init_trans = carla.Transform(carla.Location(x= offset, z=2.5))
     gps = world.try_spawn_actor(gps_bp, gps_init_trans, attach_to = vehicle)
     
     # gps.listen(lambda gps_coord: store_coord(latitude=latitude, longitude= longitude, gps_coord=gps_coord))
 
     return gps
 
-def spawn_gps_2(blue_print, vehicle, world):
+# def spawn_gps_2(blue_print, vehicle, world):
 
-    gps_bp = blue_print.find('sensor.other.gnss')
-    gps_transform = carla.Transform(carla.Location(x = 2, z = 2.5))
-    gps = world.spawn_actor(gps_bp, gps_transform, attach_to = vehicle)
+#     gps_bp = blue_print.find('sensor.other.gnss')
+#     gps_transform = carla.Transform(carla.Location(x = offset, z = 2.5))
+#     gps = world.spawn_actor(gps_bp, gps_transform, attach_to = vehicle)
 
+#     return gps
+
+
+def spawn_gps_err(blue_print, vehicle, world,offset = 1, acc= 0):
+
+    gps_bps = blue_print.find('sensor.other.gnss')
+    # setting accuracy of latitude
+    gps_bps.set_attribute('noise_lat_bias', '0')
+    gps_bps.set_attribute('noise_lat_stddev', str(math.sqrt(acc)))
+    # setting accuracy of longitude
+    gps_bps.set_attribute('noise_lon_bias', '0')
+    gps_bps.set_attribute('noise_lon_stddev', str(math.sqrt(acc)))
+    gps_bps.set_attribute('noise_seed', '1')
+    gps_init_trans = carla.Transform(carla.Location(x= offset, z=2.5))
+    gps = world.try_spawn_actor(gps_bps, gps_init_trans, attach_to = vehicle)
     return gps
-
-
-
-
 
 def calc_err(src, pos):
 
@@ -472,9 +484,9 @@ def scenario_distance_gps():
     vehicle1.set_autopilot(True)
 
     # spawning gps sensors to our two vehicles
-    gps_vehicle1 = spawn_gps(bps, vehicle1, world)
-    gps_vehicle2 = spawn_gps(bps, vehicle2, world)
-    gps_vehicle1_2 = spawn_gps_2(bps, vehicle = vehicle1, world = world)
+    gps_vehicle1 = spawn_gps_err(bps, vehicle1, world, 1, 5)
+    gps_vehicle2 = spawn_gps_err(bps, vehicle2, world, 1, 5)
+    gps_vehicle1_2 = spawn_gps_err(bps, vehicle = vehicle1, world = world, offset = 2, acc = 5)
 
     coord_v1 = [None, None]
     coord_v1_2 = [None, None]
@@ -755,7 +767,7 @@ def scenario_lane_detection():
     enable_auto_pilot(client, 5000, [vehicle], world)
 
     camera = spawn_camera(bps, vehicle, world, camera_path)
-    camera_img = np.zeros((size[0], size[1], 3))
+    camera_img = [None]
     # configuring parameters for lane detection algorrithm:
     # points for prespective transform
     # input_top_left = [550,468]
@@ -778,12 +790,13 @@ def scenario_lane_detection():
     old_list = [right_poly_old, left_poly_old]
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_path = './videos/lane_demo.mp4'
-    out = cv2.VideoWriter(video_path, fourcc, 25.0, (800,600))
-
+    video_path = '/home/amr/GradProj/videos/lane_demo.mp4'
+    out_src = cv2.VideoWriter(video_path, fourcc, 25.0, (800,600))
+    video_path = '/home/amr/GradProj/videos/lane_sliding_window.mp4'
+    out_detect = cv2.VideoWriter(video_path, fourcc, 25.0, (800,600))
     
-    camera.listen(lambda img : call_back_camera_lane(img, camera_img, src_pts, dst_pts,s_thresh, l_thresh, shad_thresh,old_list,out,save = True) )
-
+    # camera.listen(lambda img : call_back_camera_lane(img, camera_img, src_pts, dst_pts, s_thresh, l_thresh, shad_thresh, old_list, out_src,out_detect, True) )
+    camera.listen(lambda img : call_back_camera(img, camera_img, True))
     
     
     
@@ -797,7 +810,6 @@ def scenario_lane_detection():
         spectator = world.get_spectator()
         spectator_transform = carla.Transform(vehicle.get_transform().transform(carla.Location(x=-8, z= 2.5)), vehicle.get_transform().rotation)
         spectator.set_transform(spectator_transform)
-
         
         
         # cv2.imshow("Lane Detection: ", camera_img)
@@ -807,6 +819,8 @@ def scenario_lane_detection():
         try:
 
             if keyboard.is_pressed('b'):
+                out_src.release()
+                out_detect.release()
                 camera.stop()
                 camera.destroy()
                 vehicle.destroy()
@@ -815,7 +829,7 @@ def scenario_lane_detection():
                 
         except:
             continue
-    out.release()
+    
             
         
 
@@ -827,7 +841,7 @@ def extract_color_trial():
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    scenario_lane_detection()
+    scenario_distance_gps()
 
 
 
